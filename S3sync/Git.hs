@@ -20,11 +20,11 @@ cdToToplevel = do
   cd $ fromText $ init dir
 
 commit::Text->ShIO ()
-commit m =  pure () <$ onFailure "Git failed to commit" $ silently $ git "commit" ["-m",m]
+commit m =  () <$ (onFailure "Git failed to commit" $ silently $ git "commit" ["-m",m])
 
 -- Ensure that the working directory is clean. Only needed for completely re-uploading the repo.
 clean::ShIO ()
-clean = pure () <$ silently $ git "reset" ["--hard"]
+clean = () <$ (silently $ git "reset" ["--hard"])
   
 everything::ShIO [Change]
 everything = toChanges <$> git "ls-tree" ["-r","--name-only","HEAD"]
