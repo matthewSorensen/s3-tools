@@ -69,14 +69,3 @@ readContent::S3Object->ShIO S3Object
 readContent obj = do
   dat <- path (decodeString $ obj_name obj) >>= liftIO . readFile .  encodeString
   pure $ obj {obj_data = compress dat}
-
-
-test::IO ()
-test = shelly $ do
-         foo <- getS3Creds
-         uploadFile foo "s3sync.hs"
-         pure ()
-
---  creds <$ onFailure "Error in S3 request: check credentials and connectivity" $ testS3Request creds
-
-
