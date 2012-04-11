@@ -16,6 +16,4 @@ void = (() <$)
 
 env var = do
   val <- getenv var
-  if null val
-  then terror $ "Environment variable " `append` var `append` " not set"
-  else pure $ unpack val
+  if null val then terror $ "Environment variable " `append` var `append` " not set" else pure $ unpack val

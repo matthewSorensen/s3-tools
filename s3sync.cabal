@@ -1,0 +1,15 @@
+Name:                s3sync
+Version:             0.1.0
+Synopsis:            Syncs git repositories with Amazon S3 buckets
+Homepage:            https://github.com/matthewSorensen/s3sync
+License:             BSD3
+License-file:        LICENSE
+Author:              Matthew Sorensen
+Maintainer:          matthew.d.sorensen@gmail.com
+Category:            Network
+Build-type:          Simple
+Cabal-version:       >=1.2
+Executable s3sync
+  Main-is:             s3sync.hs
+  Build-depends:  shelly >= 0.3.1 && < 0.4, base, attoparsec, hS3, text, bytestring, zlib, system-filepath, MissingH, cmdargs
+  
