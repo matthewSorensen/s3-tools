@@ -34,7 +34,7 @@ everything = toChanges <$> git "ls-tree" ["-r","--name-only","HEAD"]
 changes::ShIO [Change]
 changes = do
   status <- git "status" ["-z"]
-  case parse (parseEntry `manyTill` end) status of
+  case parse entries status of
     Done _ entries -> pure (entries >>= selectChange)
     Fail _ _ _ -> terror "Failed to parse git status output"
 -- A parser for git-status' machine output format (-z), documented at http://schacon.github.com/git/git-status.html
@@ -47,6 +47,10 @@ data GitEntry = GitEntry {
       other::Maybe FilePath
     } deriving (Show,Eq)
 data Action = None | Modified | Added | Deleted | Renamed | Copied | Unmerged | Ignore deriving(Show,Eq)
+
+entries::Parser [GitEntry]
+entries = ([] <$ endOfInput) <|> (parseEntry `manyTill` end)
+    where end = endOfLine *> endOfInput
 
 parseEntry::Parser GitEntry
 parseEntry = (GitEntry <$> action <*> action <*> parsePath <*> pure Nothing) >>= otherFile
@@ -62,7 +66,6 @@ action = choice $ mp <$> [(None,' '),(Modified, 'M'),
     where mp (act,c) = act <$ char c
 
 nul = char '\NUL'
-end = endOfLine >> endOfInput
 filepathFromStrict = fromText . fromChunks . (:[])
 
 -- Only take the changes that we want - and rewrite all moves and copies in terms of add/delete.
