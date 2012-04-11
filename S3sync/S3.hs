@@ -66,9 +66,9 @@ s3object buck f = S3Object {
                   , obj_data = mempty }
 serverHeaders obj = obj { content_type = getMimeType $ obj_name obj
                         , obj_headers = gzip : cache : obj_headers obj } 
-    where gzip = ("x-amz-meta-Content-Encoding","gzip")
-          cache = ("x-amz-meta-Cache-Control","max-age=21600") -- Cache everything for 6 hours.
-          getMimeType = fromMaybe "binary/octet-stream" . fst . guessType defaultmtd False 
+    where gzip = ("Content-Encoding","gzip")
+          cache = ("Cache-Control","max-age=21600") -- Cache everything for 6 hours.
+          getMimeType = fromMaybe "text/html" . fst . guessType defaultmtd False 
 
 readContent::FilePath->S3Object->ShIO S3Object
 readContent f obj = do
