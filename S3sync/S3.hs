@@ -1,10 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-module S3sync.S3 (getS3Creds, 
+module S3sync.S3 (supplementS3Creds,
                   testS3,
                   deleteFile,
                   uploadFile,
                   purgeBucket,
-                  S3Credentials) where
+                  S3Credentials (..)) where
 import S3sync.Utils 
 
 import Shelly 
@@ -44,8 +44,11 @@ data S3Credentials = S3Credentials {
       bucket::String
     } deriving (Show,Eq)
 
-getS3Creds::ShIO S3Credentials
-getS3Creds = S3Credentials <$> env "AWS_ACCESS_KEY" <*> env "AWS_SECRET_KEY" <*> env "AWS_S3_BUCKET"
+-- Takes a set of credentials and fills them missing fields from environment variables
+supplementS3Creds::S3Credentials -> ShIO S3Credentials
+supplementS3Creds (S3Credentials acc sec buc) = S3Credentials <$> supEnv acc "AWS_ACCESS_KEY" <*> supEnv sec "AWS_SECRET_KEY" <*> supEnv buc "AWS_S3_BUCKET"
+    where supEnv "" key = env key
+          supEnv x  _   = pure x
 
 connectionFromCreds (S3Credentials access secret _) = amazonS3Connection access secret
 

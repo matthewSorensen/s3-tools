@@ -8,16 +8,24 @@ import System.Console.CmdArgs
 import Control.Monad (unless)
 
 import qualified S3sync.Git as Git
-import S3sync.S3
+import S3sync.S3 hiding (bucket)
 
-data Opts = Opts {
-      reset::Bool,
-      commit::String
-    } deriving (Show,Data,Typeable)
+data Opts = Opts { reset::Bool
+                 , commit::String
+                 , bucket::String
+                 , access_key::String
+                 , secret_key::String
+                 } deriving (Show,Data,Typeable)
 defaultOpts = Opts {
-                reset = False &= help "Executes 'git reset --hard HEAD', empties the S3 bucket, and uploads a copy of HEAD",
-                commit = "" &= help "Git commit message - doesn't commit if this isn't provided"
+                reset = False &= help "Executes 'git reset --hard HEAD', empties the S3 bucket, and uploads a copy of HEAD"
+              , commit = "" &= help "Git commit message - doesn't commit if this isn't provided"
+              , bucket = "" &= help "S3 bucket to upload to"
+              , access_key = "" &= help "S3 access key"
+              , secret_key = "" &= help "S3 secret"
               } &= summary "s3sync v0.0.1, (c) Matthew Sorensen 2012"
+
+credsFromOpts o = supplementS3Creds $ S3Credentials (access_key o) (secret_key o) $ bucket o
+
 runChanges::S3Credentials->[Git.Change]->ShIO ()
 runChanges cred = mapM_ run
     where run (Git.Write f)  = notify "Upload" f *> uploadFile cred (encodeString f)
@@ -36,6 +44,6 @@ main = do
   opts <- cmdArgs defaultOpts
   shelly $ do
          Git.cdToToplevel
-         cred <- getS3Creds
+         cred <- credsFromOpts opts
          echo "Testing S3 access" *> testS3 cred
          if reset opts then resetS3 cred else syncS3 cred $ commit opts
