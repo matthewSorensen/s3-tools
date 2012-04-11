@@ -28,8 +28,8 @@ credsFromOpts o = supplementS3Creds $ S3Credentials (access_key o) (secret_key o
 
 runChanges::S3Credentials->[Git.Change]->ShIO ()
 runChanges cred = mapM_ run
-    where run (Git.Write f)  = notify "Upload" f *> uploadFile cred (encodeString f)
-          run (Git.Delete f) = notify "Delet" f *> deleteFile cred (encodeString f)
+    where run (Git.Write f)  = notify "Upload" f *> uploadFile cred f
+          run (Git.Delete f) = notify "Delet" f  *> deleteFile cred f
           notify verb f = echo $ verb `mappend` "ing file \"" `mappend` toTextUnsafe f `mappend` "\" to S3"
 resetS3 cred = do
   echo "Cleaning working tree" *> Git.clean

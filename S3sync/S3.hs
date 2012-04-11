@@ -8,12 +8,13 @@ module S3sync.S3 (supplementS3Creds,
 import S3sync.Utils 
 
 import Shelly 
-import Prelude hiding (readFile)
+import Prelude hiding (readFile,FilePath)
 import Control.Applicative
 import Data.Monoid (mempty,mappend)
 import Data.Maybe (fromMaybe)
 import Data.MIME.Types	(defaultmtd,guessType)
 import Filesystem.Path.CurrentOS (decodeString,encodeString)
+import Filesystem.Path (FilePath)
 import Codec.Compression.GZip (compress)
 import Data.ByteString.Lazy (readFile)
 import Data.Text.Lazy (pack)
@@ -35,7 +36,7 @@ deleteFile c f = runAWS $ deleteObject (connectionFromCreds c) $ s3object c f
 
 uploadFile::S3Credentials->FilePath->ShIO ()
 uploadFile cred f = do
-  object <- readContent $ setStorageClass STANDARD $ serverHeaders $ s3object cred f
+  object <- readContent f $ setStorageClass STANDARD $ serverHeaders $ s3object cred f
   runAWS $ sendObject (connectionFromCreds cred) object
 
 data S3Credentials = S3Credentials {
@@ -59,7 +60,7 @@ runAWS = (() <$  ) . (>>= either awsError pure) . liftIO
 s3object::S3Credentials->FilePath->S3Object
 s3object buck f = S3Object {
                     obj_bucket = bucket buck
-                  , obj_name = f
+                  , obj_name = encodeString f
                   , content_type = "binary/octet-stream"
                   , obj_headers = mempty
                   , obj_data = mempty }
@@ -69,7 +70,7 @@ serverHeaders obj = obj { content_type = getMimeType $ obj_name obj
           cache = ("x-amz-meta-Cache-Control","max-age=21600") -- Cache everything for 6 hours.
           getMimeType = fromMaybe "binary/octet-stream" . fst . guessType defaultmtd False 
 
-readContent::S3Object->ShIO S3Object
-readContent obj = do
-  dat <- path (decodeString $ obj_name obj) >>= liftIO . readFile .  encodeString
+readContent::FilePath->S3Object->ShIO S3Object
+readContent f obj = do
+  dat <- path f  >>= liftIO . readFile . encodeString
   pure $ obj {obj_data = compress dat}
