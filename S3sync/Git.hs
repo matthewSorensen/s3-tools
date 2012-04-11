@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module S3sync.Git (cdToToplevel, commit, clean, everything, Change (..)) where
+module S3sync.Git (cdToToplevel, commit, clean, everything, changes, Change (..)) where
 
 import S3sync.Utils
 import Shelly hiding ((<$>))
@@ -19,15 +19,15 @@ cdToToplevel = do
   dir <- onFailure "Not in a git repository, or git is broken" $ silently $ git "rev-parse" ["--show-toplevel"]
   cd $ fromText $ init dir
 
-commit::Text->ShIO ()
-commit m =  () <$ (onFailure "Git failed to commit" $ silently $ git "commit" ["-m",m])
+commit::String->ShIO ()
+commit m =  () <$ (onFailure "Git failed to commit" $ silently $ git "commit" ["-m",pack m])
 
 -- Ensure that the working directory is clean. Only needed for completely re-uploading the repo.
 clean::ShIO ()
 clean = () <$ (silently $ git "reset" ["--hard"])
   
 everything::ShIO [Change]
-everything = toChanges <$> git "ls-tree" ["-r","--name-only","HEAD"]
+everything = toChanges <$> (silently $ git "ls-tree" ["-r","--name-only","HEAD"])
     where toChanges = fmap (Write . fromText)  . lines
 
 -- A change we need to commit to s3
@@ -35,7 +35,7 @@ data Change = Write FilePath | Delete FilePath deriving(Show,Eq)
 
 changes::ShIO [Change]
 changes = do
-  status <- git "status" ["-z"]
+  status <- silently$ git "status" ["-z"]
   case parse (parseEntry `manyTill` end) status of
     Done _ entries -> pure (entries >>= selectChange)
     Fail _ _ _ -> terror "Failed to parse git status output"
