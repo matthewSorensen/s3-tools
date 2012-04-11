@@ -11,3 +11,6 @@ and browser caches expire in six hours.
 
 AWS credentials are obtained from the *AWS_ACCESS_KEY*, *AWS_SECRET_KEY*, and *AWS_S3_BUCKET*
 environment variables.
+
+Unfortunately, the Haskell S3 library has a number of shortcomings: all connections are http-only,
+and files are loaded into memory before requests are sent.
