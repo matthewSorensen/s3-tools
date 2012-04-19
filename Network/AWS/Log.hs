@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, OverlappingInstances, TemplateHaskell #-}
-module S3sync.Logs (
+module Network.AWS.Log (
                     S3Log (..)
                    , Requester (..)
                    , Quoted (..)
                    , logMessages
+                   ,  emptyLogBucket
                    -- Also implicitly exports JSON awesomeness
                    )where
-
-import Data.Text
+import Prelude hiding (concat)
+import Data.Text hiding (concat)
 import Data.Attoparsec.Text hiding (parse)
 import Control.Applicative
 import Data.Char
@@ -17,16 +18,41 @@ import System.Locale (defaultTimeLocale)
 import Data.Aeson.Types hiding (parse,Parser)
 import Data.Aeson.TH
 import Data.Text.Encoding (decodeUtf8)
-import Data.ByteString (ByteString)
-import Control.Monad (mzero)
+import Data.ByteString (ByteString,concat)
+import Data.ByteString.Lazy (toChunks)
+import Control.Monad (mzero,mapM)
+
+import Network.AWS.AWSResult (AWSResult,ReqError)
+import Network.AWS.AWSConnection (AWSConnection)
+import Network.AWS.S3Object (obj_data,S3Object (..),getObject,deleteObject)
+import Network.AWS.S3Bucket 
 
 
 logMessages::ByteString->[S3Log]
 logMessages = either (const []) id . parseOnly (many parseLog) . decodeUtf8
 
+retriveLogs::AWSConnection->String->String->EitherT IO ReqError [S3Log]
+retriveLogs c bucket key = do
+  log <- aws $ getObject c $ S3Object bucket key "" [] ""
+  aws $ deleteObject c log
+  return $ logMessages $ concat $ toChunks $ obj_data log
+
+emptyLogBucket::AWSConnection->String->IO (AWSResult [[S3Log]])
+emptyLogBucket c buck = runEitherT $ aws (listAllObjects c buck para) >>= mapM fetch
+    where fetch (ListResult k _ _ _ _) = retriveLogs c buck k
+          para  = ListRequest "" "" "" 1000
 
 
+data EitherT m a b = EitherT {runEitherT:: m (Either a b)}
 
+instance Functor m=>Functor (EitherT m a) where
+    fmap f = EitherT . fmap (fmap f) . runEitherT
+
+instance Monad m=>Monad (EitherT m a) where
+    return = EitherT . return . return
+    x >>= f = EitherT $ runEitherT x >>= either (return . Left) (runEitherT . f)
+
+aws = EitherT
 
 data Requester = Requester Text | Anonymous deriving(Show,Eq)
 
@@ -67,29 +93,23 @@ class Parse a where
 
 instance Parse Int where
     parse = decimal <|> (0 <$ char '-')
-
 instance Parse Text where
     parse = takeTill isSpace
-
 instance Parse a=>Parse (Maybe a) where
     parse = (Nothing <$ char '-') <|> (Just <$> parse)
-
 instance Parse Quoted where
     parse = char '"' *> (Quoted <$> scan False sm) <* char '"'
         where sm False '"'  = Nothing
               sm False '\\' = Just True
               sm False _    = Just False
               sm True  _    = Just False
-
 instance Parse (Maybe Quoted) where
     parse = toMaybe <$> parse 
         where toMaybe (Quoted "-") = Nothing
               toMaybe (Quoted t  ) = Just $ Quoted t
-
 instance Parse UTCTime where
     parse = char '[' *> (takeTill (==']') >>= toUTC) <* char ']'
             where toUTC = maybe (fail "timestamp") pure . parseTime defaultTimeLocale "%d/%b/%Y:%H:%M:%S %z" .unpack
-
 instance Parse Requester where
     parse = (Anonymous <$ string "Anonymous") <|> (Requester <$> parse)
 
@@ -97,11 +117,9 @@ instance Parse Requester where
 -- instances of Parse, it is otherwise treated as a string:
 instance ToJSON Quoted where
     toJSON (Quoted s) = String s
-
 instance FromJSON Quoted where
     parseJSON (String s)  = pure $ Quoted s
     parseJSON _           = mzero
-
 -- The string "Anonymous" gets special treatment in the context of a requester:
 instance ToJSON Requester where
     toJSON (Requester t) = String t
@@ -110,5 +128,4 @@ instance FromJSON Requester where
     parseJSON (String "Anonymous") = pure Anonymous
     parseJSON (String r)           = pure $ Requester r
     parseJSON _                    = mzero
-
 $(deriveJSON id ''S3Log)
