@@ -1,5 +1,11 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, OverlappingInstances #-}
-module S3sync.Logs where
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, OverlappingInstances, TemplateHaskell #-}
+module S3sync.Logs (
+                    S3Log (..)
+                   , Requester (..)
+                   , Quoted (..)
+                   , logMessages
+                   -- Also implicitly exports JSON awesomeness
+                   )where
 
 import Data.Text
 import Data.Attoparsec.Text hiding (parse)
@@ -8,6 +14,19 @@ import Data.Char
 import Data.Time.Clock (UTCTime)
 import Data.Time.Format (parseTime)
 import System.Locale (defaultTimeLocale)
+import Data.Aeson.Types hiding (parse,Parser)
+import Data.Aeson.TH
+import Data.Text.Encoding (decodeUtf8)
+import Data.ByteString (ByteString)
+import Control.Monad (mzero)
+
+
+logMessages::ByteString->[S3Log]
+logMessages = either (const []) id . parseOnly (many parseLog) . decodeUtf8
+
+
+
+
 
 data Requester = Requester Text | Anonymous deriving(Show,Eq)
 
@@ -74,4 +93,22 @@ instance Parse UTCTime where
 instance Parse Requester where
     parse = (Anonymous <$ string "Anonymous") <|> (Requester <$> parse)
 
+-- As the Quoted type only exists to force ghc to choose certain
+-- instances of Parse, it is otherwise treated as a string:
+instance ToJSON Quoted where
+    toJSON (Quoted s) = String s
 
+instance FromJSON Quoted where
+    parseJSON (String s)  = pure $ Quoted s
+    parseJSON _           = mzero
+
+-- The string "Anonymous" gets special treatment in the context of a requester:
+instance ToJSON Requester where
+    toJSON (Requester t) = String t
+    toJSON Anonymous     = String "Anonymous"
+instance FromJSON Requester where
+    parseJSON (String "Anonymous") = pure Anonymous
+    parseJSON (String r)           = pure $ Requester r
+    parseJSON _                    = mzero
+
+$(deriveJSON id ''S3Log)
