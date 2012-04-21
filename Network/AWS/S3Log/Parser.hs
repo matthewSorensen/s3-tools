@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances, OverlappingInstances #-}
-module Network.AWS.S3Log.Parser (parseLogs) where
+module Network.AWS.S3Log.Parser (parseLogs, logParser, safeLogParser) where
 
 import Network.AWS.S3Log.Data
 
@@ -16,13 +16,18 @@ import Data.ByteString (ByteString,concat)
 import Data.ByteString.Lazy (toChunks)
 
 parseLogs::ByteString->[S3Log]
-parseLogs = either (const []) id . parseOnly (many parseLog) . decodeUtf8
+parseLogs = either (const []) id . parseOnly (many logParser) . decodeUtf8
 
-parseLog::Parser S3Log
-parseLog = fiveteen (three $ pure S3Log) <* rest
+logParser::Parser S3Log
+logParser = fiveteen (three $ pure S3Log) <* rest
     where three f = f <*> parseField <*> parseField <*> parseField
           fiveteen = three . three . three . three . three
           rest = takeTill (=='\n') *> endOfLine
+
+logFailureLine::Parser a
+logFailureLine = (takeTill (=='\n') <* endOfLine) >>= fail . ("Failed on: " ++) . unpack
+
+safeLogParser = logParser <|> logFailureLine
 
 class Parse a where
     parse::Parser a

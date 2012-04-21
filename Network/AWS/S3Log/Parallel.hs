@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Network.AWS.S3Log.Parallel (emptyLog,fetchLog) where
+module Network.AWS.S3Log.Parallel (emptyLog,fetchLog,getMaybeDelete) where
 
 import Network.AWS.Monad
 import Network.AWS.S3Log.Data (S3Log)
@@ -28,32 +28,21 @@ processLogs del con bucket = collapse $ do
                                liftIO  $ parallelRequests $ map (retriveLog del con bucket . key) keys
 
 retriveLog::Bool->AWSConnection->String->String->AWS [S3Log]
-retriveLog del con bucket key = do
-  log <- aws $ getObject con $ S3Object bucket key "" [] ""
-  when del $ aws $ deleteObject con log
-  return $ parseLogs $ B.concat $ toChunks $ obj_data log
+retriveLog del con bucket key = fmap parse $ getMaybeDelete del con bucket key
+    where parse = parseLogs . B.concat .toChunks . obj_data
+
+getMaybeDelete::Bool->AWSConnection->String->String->AWS S3Object
+getMaybeDelete del con bucket key = do
+  obj <- aws $ getObject con $ S3Object bucket key "" [] ""
+  when del $ aws $ deleteObject con obj
+  return obj
 
 parallelRequests::[AWS a]->IO ([ReqError],[a])
 parallelRequests =  fmap partitionEithers . withPool 4 . flip parallel . map runEitherT
-   
--- parallelRequests =  fmap partitionEithers . parallel . map runEitherT
    
 collapse::AWS ([ReqError],[[a]])->IO ([ReqError],[a])
 collapse =  fmap (either flail conc )  . runEitherT
     where flail x = ([x],[])
           conc (err,logs) = (err,concat logs)
-{--
 
-retriveLogs::AWSConnection->String->String->AWS [S3Log]
-retriveLogs c bucket key = do
-  log <- aws $ getObject c $ S3Object bucket key "" [] ""
-  aws $ deleteObject c log
-  return $ logMessages $ concat $ toChunks $ obj_data log
-
-
-emptyLogBucket::AWSConnection->String->IO (AWSResult [[S3Log]])
-emptyLogBucket c buck = runEitherT $ aws (listAllObjects c buck para) >>= mapM fetch
-    where fetch (ListResult k _ _ _ _) = retriveLogs c buck k
-          para  = ListRequest "" "" "" 1000
-
---}
+-- Ultimate function: a conduit that fetches logs in parallel, and preforms
