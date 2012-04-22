@@ -9,7 +9,13 @@ Maintainer:          matthew.d.sorensen@gmail.com
 Category:            Network
 Build-type:          Simple
 Cabal-version:       >=1.2
+
+Library
+  Exposed-modules:   Network.AWS.Monad, Network.AWS.S3Log.Conduit, Network.AWS.S3Log
+  Build-depends:     transformers, hS3, conduit >= 0.4.0.1, attoparsec >= 0.10, parallel-io, text, bytestring, old-locale, time, aeson       
+  Other-modules:       Network.AWS.S3Log.Parser, Network.AWS.S3Log.Data, Network.AWS.S3Log.Parallel
+  
 Executable s3sync
   Main-is:             s3sync.hs
-  Build-depends:  shelly >= 0.3.1 && < 0.4, base, attoparsec, hS3, text, bytestring, zlib, system-filepath, MissingH, cmdargs
+  Build-depends:  shelly >= 0.3.1 && < 0.4, base, attoparsec >= 0.10, hS3, text, bytestring, zlib, system-filepath, MissingH, cmdargs
   

@@ -1,3 +1,4 @@
+{- # LANGUAGE OverloadedStrings #-}
 module Network.AWS.S3Log.Conduit (streamLogEntries) where
 
 import Network.AWS.S3Log.Parser (safeLogParser)
@@ -17,11 +18,10 @@ import Control.Monad.IO.Class (liftIO)
 
 import Data.ByteString.Lazy (ByteString,toChunks)
 import qualified Data.ByteString as B
-import Data.Text (Text)
+import Data.Text (Text,empty,null)
+import Prelude hiding (null)
 
 import qualified Data.Attoparsec.Text as A
-
-import Data.Conduit.Lazy
 
 data BucketState = Keys [String] | Error ReqError | Terminate
 type ResourceIO = ResourceT IO
@@ -54,11 +54,12 @@ type ParseResult a = Either String a
 
 attoparsec::(Monad m,MonadThrow m)=>A.Parser a->Conduit (Either String Text) m (Either String a)
 attoparsec parser = conduitState Finished push flush
-    where consumeChunk acc st "" = (st, reverse acc)
-          consumeChunk acc st t  = case getCont st t of
-                                     (A.Done rest new) -> consumeChunk (Right new : acc) Finished rest
-                                     (A.Partial f)       -> (Parsing f, reverse acc)
-                                     (A.Fail rest _ err) -> consumeChunk (Left  err : acc) Finished rest 
+    where consumeChunk acc st text
+              | null text = (st, reverse acc)
+              | otherwise = case getCont st text of
+                              (A.Done rest new)   -> consumeChunk (Right new : acc) Finished rest
+                              (A.Partial f)       -> (Parsing f, reverse acc)
+                              (A.Fail rest _ err) -> consumeChunk (Left  err : acc) Finished rest 
 
           getCont Finished    = A.parse parser
           getCont (Parsing f) = f
@@ -66,7 +67,7 @@ attoparsec parser = conduitState Finished push flush
           push st = return . either (StateProducing st . (:[]) . Left) (uncurry StateProducing . consumeChunk [] st)
               
           flush Finished    = return []
-          flush (Parsing f) = return $ case f "" of
+          flush (Parsing f) = return $ case f empty of
                                          (A.Done _ new)   -> [Right new]  
                                          (A.Partial _)    -> [Left "End of input"]
                                          (A.Fail _ _ err) -> [Left err] 
