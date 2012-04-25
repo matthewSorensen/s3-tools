@@ -7,20 +7,16 @@ module S3Logd.Config (
                      ) where
 
 import S3Logd.Syslog (syslog)
-
-import Prelude hiding (readFile)
-
+import Prelude hiding (readFile, writeFile)
 import Data.Aeson
 import Data.Aeson.TH
-
-import Data.ByteString.Lazy (readFile)
+import Data.ByteString.Lazy (readFile,writeFile)
 import Data.Map (Map)
-
 import Control.Concurrent.MVar
 import System.Posix.Signals
 import Control.Exception (try,SomeException (..))
+import Control.Monad (forever,when)
 
-import Control.Monad (forever)
 
 loopWithConf::FilePath->(Config->IO ())->IO ()
 loopWithConf path f = do
@@ -34,15 +30,18 @@ loopWithConf path f = do
 reloadConfig::FilePath->MVar Config->IO ()
 reloadConfig file m = do
   conf <- fmap (>>= decode) $  maskAll $ readFile file
-  maybe failure (fmap (const ()) . swapMVar m) conf
+  maybe failure (whackMVar m) conf
       where failure = syslog "Error loading config file"
 
+-- Puts a value into an mvar, even if the mvar already contains one.
+whackMVar::MVar a->a->IO ()
+whackMVar m val = do
+  tryTakeMVar m
+  putMVar m val
 
 maskAll::IO a->IO (Maybe a)
 maskAll = fmap (either (ignore::SomeException->Maybe a) Just) . try
     where ignore = const Nothing
-
-
 
 data Config = Config {
       interval::Int,
@@ -61,6 +60,15 @@ data Paths = Paths {
       log_directory::FilePath,
       state::FilePath
     } deriving(Show)
+
+def = Config {
+        interval = 60,
+        credentials = Credentials "" "",
+        paths = Paths "" "",
+        log_formats = Nothing,
+        bandwidth_limits = Nothing
+        }
+
 
 $(deriveJSON (map (\x->if x=='-' then ' ' else x)) ''Config)
 $(deriveJSON (map (\x->if x=='-' then ' ' else x)) ''Credentials)
