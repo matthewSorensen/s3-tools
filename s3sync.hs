@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, DeriveDataTypeable #-}
-import Shelly 
+import Shelly
 import Control.Applicative 
 import Control.Monad (mapM_)
 import Data.Monoid (mappend)
@@ -30,7 +30,7 @@ runChanges::S3Credentials->[Git.Change]->ShIO ()
 runChanges cred = mapM_ run
     where run (Git.Write f)  = notify "Upload" f *> uploadFile cred f
           run (Git.Delete f) = notify "Delet" f  *> deleteFile cred f
-          notify verb f = echo $ verb `mappend` "ing file \"" `mappend` toTextUnsafe f `mappend` "\" to S3"
+          notify verb f = echo $ verb `mappend` "ing file \"" `mappend` toTextIgnore f `mappend` "\" to S3"
 resetS3 cred = do
   echo "Cleaning working tree" *> Git.clean
   changes <- Git.everything
