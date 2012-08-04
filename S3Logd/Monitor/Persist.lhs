@@ -1,16 +1,29 @@
 ---
-title: Simple Append-only/Log-structured Persistence
+title: S3Logd Persistent Storage Layer
 author: Matthew Sorensen
 published: August 3, 2012
 short: Wherein the construction of the storage layer for S3Logd is detailed.
 tags: Haskell
 ---
 
-Append-only persistance layer.
+Amazon's S3 is a really convenient tool for any developer looking for no-fuss 
+storage for arbitrarily-large objects - in particular, it's extremely reliable and near-infinitely
+scalable. However, when your credit card is on the line, "infinitely scalable" means
+"arbitrarily expensive," and a number of [costly accidents](http://www.behind-the-enemy-lines.com/2012/04/google-attack-how-i-self-attacked.html)
+have occurred. Amazon has [refused](https://forums.aws.amazon.com/thread.jspa?threadID=58127&tstart=75) 
+to implement voluntary bandwidth caps on buckets, as they obviously have no financial incentive
+to do so. Thus, I'm writing a simple little daemon that fetched my S3 logs and checks for
+excessive activity or buckets that exceed a particular cost per billing period.
 
-Implements a simple log-based persistance layer for current bandwidth consumption. 
-Aims to be decently performant, somewhat space-efficient, and suffer from minimal 
-data-loss upon crashes.
+In order to this, one must maintain a list of total data-transfer in the current billing-period for
+each buckets - reliability is important, as data-loss could result in a large charge. However,
+ease of implementation and maintenance suggests that it would be nice not to pull in any dependencies 
+on an external database or even something like [acid-state](http://hackage.haskell.org/package/acid-state/).
+Thus, I decided to implement my own Simple Storage Service Supervisor Simple State Storage Solution.
+The design is about as simple as such things get: in-memory, with an append-only journal that records
+all modification events and is GC'd on startup - sorta similar to [Neil Mitchell's solution](http://neilmitchell.blogspot.com/2012/06/shake-storage-layer.html) for Shake.
+I aimed merely to be decently performant, somewhat space-efficient, and pretty reliable - but the implementation
+turned out much more elegantly that I thought, so it just had to be blogged.
 
 > {-# LANGUAGE OverloadedStrings #-}
 >
@@ -26,7 +39,6 @@ data-loss upon crashes.
 >import Data.HashMap.Strict hiding (foldl',map)
 >import System.IO hiding (writeFile,readFile)
 >import Control.Monad.State
->import Control.Monad.Trans (liftIO)
 >import Prelude hiding (lookup,foldl,take,all,length,writeFile,readFile)
 >import Data.List (foldl')
 >import System.Directory (doesFileExist,renameFile,removeFile)
@@ -181,16 +193,16 @@ Tricky parts
 
 Why have we generalized this to *MonadIO* instead of just IO? Time will. Tell.
 
->incrementBandwidth :: (MonadIO m, Functor m) => ByteString -> Word64 -> Persist -> m (Word64 , Persist)
+>incrementBandwidth :: ByteString -> Word64 -> Persist -> IO (Word64 , Persist)
 >incrementBandwidth bucket new p = maybe insertBucket bucketExists $ lookup bucket $ total p
 >    where insertBucket = do
->                         liftIO $ writeEvent (Set bucket new) (handle p)
+>                         writeEvent (Set bucket new) (handle p)
 >                         return $! (new, updateTotalDiff p bucket new 0)           
 >          bucketExists exists = do
 >                         let diff' = new + lookupDefault 0 bucket (diff p)
 >                         if diff' > granularity p 
 >                         then (diff' + exists, updateTotalDiff p bucket (diff' + exists) 0)
->                                <$ liftIO (writeEvent (Increment bucket diff') (handle p))
+>                                <$ writeEvent (Increment bucket diff') (handle p)
 >                         else return (exists + diff', updateTotalDiff p bucket exists diff')
 
 Note that the last bit of that type signature looks rather like the result of runStateT on
@@ -202,26 +214,6 @@ and then use *HashMap*'s built-in traversal-with-applicative-functor function:
 >incrementHash = runStateT . traverseWithKey lifted
 >    where lifted b w = StateT $ incrementBandwidth b w
 
-
-
 >resetBandwidth :: ByteString -> Persist -> IO Persist
 >resetBandwidth bucket p = updateTotalDiff p bucket 0 0 <$ writeEvent (Set bucket 0) (handle p) 
 
-
-Testing Interlude
------------------
-
-So how do we test *incrementBandwidth*? 
-
->newtype Ignore a = Ignore a deriving (Show)
->
->instance Monad Ignore where
->    return = Ignore
->    (Ignore a) >>= f = f a
->
->instance Functor Ignore where
->    fmap f (Ignore a) = Ignore $ f a 
->instance MonadIO Ignore where
->    liftIO _ = Ignore $ error "No peaking!"
-
-Then implement quickcheck properties in the Ignore monad instead of IO.
