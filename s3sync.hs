@@ -6,6 +6,7 @@ import Data.Monoid (mappend)
 import Filesystem.Path.CurrentOS (encodeString)
 import System.Console.CmdArgs
 import Control.Monad (unless)
+import Data.MIME.Types	(defaultmtd,readMIMETypes,guessType)
 
 import qualified S3sync.Git as Git
 import S3sync.S3 hiding (bucket)
@@ -27,10 +28,12 @@ defaultOpts = Opts {
 credsFromOpts o = supplementS3Creds $ S3Credentials (access_key o) (secret_key o) $ bucket o
 
 runChanges::S3Credentials->[Git.Change]->ShIO ()
-runChanges cred = mapM_ run
-    where run (Git.Write f)  = notify "Upload" f *> uploadFile cred f
-          run (Git.Delete f) = notify "Delet" f  *> deleteFile cred f
+runChanges cred changes = mimeContext >>= flip mapM_ changes . run
+    where run mime (Git.Write f)  = notify "Upload" f *> uploadFile cred mime f
+          run _    (Git.Delete f) = notify "Delet" f  *> deleteFile cred f
           notify verb f = echo $ verb `mappend` "ing file \"" `mappend` toTextIgnore f `mappend` "\" to S3"
+          mimeContext = liftIO $! readMIMETypes defaultmtd False "/etc/mime.types"
+
 resetS3 cred = do
   echo "Cleaning working tree" *> Git.clean
   changes <- Git.everything

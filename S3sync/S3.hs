@@ -12,7 +12,7 @@ import Prelude hiding (readFile,FilePath)
 import Control.Applicative
 import Data.Monoid (mempty,mappend)
 import Data.Maybe (fromMaybe)
-import Data.MIME.Types	(defaultmtd,guessType)
+import Data.MIME.Types	(MIMETypeData,guessType)
 import Filesystem.Path.CurrentOS (decodeString,encodeString)
 import Filesystem.Path (FilePath)
 import Codec.Compression.GZip (compress)
@@ -34,10 +34,11 @@ purgeBucket c = runAWS $ emptyBucket (connectionFromCreds c) $ bucket c
 deleteFile::S3Credentials->FilePath->ShIO ()
 deleteFile c f = runAWS $ deleteObject (connectionFromCreds c) $ s3object c f
 
-uploadFile::S3Credentials->FilePath->ShIO ()
-uploadFile cred f = do
-  object <- readContent f $ setStorageClass STANDARD $ serverHeaders $ s3object cred f
+uploadFile::S3Credentials->MIMETypeData->FilePath->ShIO ()
+uploadFile cred mime f = do
+  object <- readContent f $ setStorageClass STANDARD $ serverHeaders mime $ s3object cred f
   runAWS $ sendObject (connectionFromCreds cred) object
+
 
 data S3Credentials = S3Credentials {
       accessKey::String,
@@ -64,11 +65,11 @@ s3object buck f = S3Object {
                   , content_type = "binary/octet-stream"
                   , obj_headers = mempty
                   , obj_data = mempty }
-serverHeaders obj = obj { content_type = getMimeType $ obj_name obj
+serverHeaders mime obj = obj { content_type = getMimeType $ obj_name obj
                         , obj_headers = gzip : cache : obj_headers obj } 
     where gzip = ("Content-Encoding","gzip")
           cache = ("Cache-Control","max-age=21600") -- Cache everything for 6 hours.
-          getMimeType = fromMaybe "text/html" . fst . guessType defaultmtd False 
+          getMimeType = fromMaybe "text/html" . fst . guessType mime False 
 
 readContent::FilePath->S3Object->ShIO S3Object
 readContent f obj = do
