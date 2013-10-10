@@ -52,4 +52,4 @@ instance FromJSON Requester where
     parseJSON (String "Anonymous") = return Anonymous
     parseJSON (String r)           = return $ Requester r
     parseJSON _                    = mzero
-$(deriveJSON id ''S3Log)
+$(deriveJSON defaultOptions ''S3Log)
